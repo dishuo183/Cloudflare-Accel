@@ -159,6 +159,27 @@ namespace_id = "1001"
 
 该计数按 Cloudflare 边缘位置近似计算，不是严格的全球配额。共享 NAT、校园网或移动网络用户可能共用一个 IP；请依据实际流量调整，而不要把它用于精确计费。
 
+## 公开实例的免费额度与费用保护
+
+把实例放到公网共用前，先明确两个事实（依据 Cloudflare 官方文档）：
+
+- **Workers Free 计划每天 100,000 次请求，UTC 00:00 重置。超过后 Cloudflare 返回 Error 1027，不计费。**
+- **Worker 的数据传出（egress）与吞吐（bandwidth）不收费**，也没有响应体大小上限，所以大文件下载不会按流量扣费。
+
+结论：**只要账户停留在 Workers Free 计划，并只启用本项目的 Worker，就不会因为超额而产生费用。** 会真正产生费用的情形只有两类：账户已升级到 Workers Paid（$5/月起，超出额度按量计费），或在账户中另开了其它计费产品（Images、R2、Queues、Durable Objects 等）。
+
+### 建议动作
+
+1. **确认计费状态**：在 Cloudflare 仪表板确认 Workers 处于 Free 计划，且没有开通其它付费订阅；在 **Billing → Notifications** 打开用量与账单通知。
+2. **把路由设为 Fail closed**：额度耗尽时返回 1027 错误页，而不是 `Fail open`（绕过 Worker）。避免超额后行为不可预期。
+3. **在边缘拦截滥用**：配额保护要放在调用 Worker 之前才有效，即 Cloudflare 的 **WAF → Rate limiting rules** 与 **Bot Fight Mode / 安全级别**。免费计划可用 1 条限流规则。
+4. **可选：首页改为静态资源**：`Requests to static assets are free and unlimited`。把首页 HTML 交给 Workers Static Assets 提供，可让它完全不计入每日请求额度。
+5. **监控用量**：在 Workers & Pages → 指标中查看请求数与错误率，及时发现异常流量。
+
+### 一个重要区别
+
+`wrangler.toml` 中的 `RATE_LIMITER` 绑定（以及 `_worker.js` 里的 IP 限流）是**在 Worker 内部**执行的：被限流返回 `429` 的请求**已经计入**每日额度。它用于抑制滥用，但**不能**防止额度被消耗。想真正“省额度”，只能用边缘规则（第 3 条）在请求抵达 Worker 前拦截。
+
 ## 错误响应
 
 代理错误会返回稳定错误码；当请求头包含 `Accept: application/json` 时，响应为 JSON：

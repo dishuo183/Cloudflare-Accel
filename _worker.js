@@ -812,7 +812,11 @@ async function handleRequest(request, redirectCount = 0) {
   if (path === '/' || path === '') {
     return new Response(HOMEPAGE_HTML, {
       status: 200,
-      headers: { 'Content-Type': 'text/html' }
+      // 首页可被浏览器缓存，减少重复访问带来的 Worker 请求消耗
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=300'
+      }
     });
   }
 
@@ -1108,11 +1112,20 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // 首页不计入配额；所有代理请求按客户端 IP 使用默认限额。
+    // 限流只约束代理请求，首页放行。注意：请求已经调用到 Worker，429 同样会计入
+    // 免费计划的每日请求额度；真正用来“省额度”的拦截必须放在 Cloudflare 边缘
+    // （WAF Rate Limiting 规则 / Bot Fight Mode），在调用 Worker 之前完成。
     if (url.pathname !== '/' && url.pathname !== '') {
       const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
-      const { success } = await env.RATE_LIMITER.limit({ key: clientIp });
-      if (!success) {
+      let allowed = true;
+      try {
+        const { success } = await env.RATE_LIMITER.limit({ key: clientIp });
+        allowed = success;
+      } catch (error) {
+        // 绑定缺失或异常时放行，避免把请求直接变成 5xx；滥用防护依赖边缘限流规则。
+        console.log(`Rate limiter unavailable: ${error.message}`);
+      }
+      if (!allowed) {
         return createErrorResponse(request, 429, 'RATE_LIMITED', 'Too many requests. Please try again later.', {
           'Retry-After': '60'
         });
