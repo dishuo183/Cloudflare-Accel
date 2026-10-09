@@ -101,6 +101,8 @@ git clone https://your-domain/github.com/user/repo.git
 curl -LO https://your-domain/https://github.com/cloudflare/cloudflared/releases/download/2025.7.0/cloudflared-linux-amd64
 ```
 
+`github.com/.../releases/download/...` 会先返回 `302` 跳到 `release-assets.githubusercontent.com`。Worker 会在服务端跟随该跳转并把文件正文流式回传，因此客户端只需要访问加速域名，资产 CDN 不可达或缓慢时也能正常下载。
+
 ### Docker 镜像
 
 ```bash

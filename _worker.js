@@ -957,9 +957,12 @@ async function handleRequest(request, redirectCount = 0) {
   }
 
   try {
-    // Git 请求使用 follow 重定向，让 Cloudflare 自动跟随重定向
-    // 非 Git 请求使用 manual 重定向以便拦截 307 并自己请求 S3
-    const redirectMode = isGit ? 'follow' : 'manual';
+    // 重定向策略：
+    // - Docker 请求使用 manual，因为需要拦截 307 并自行请求带签名的 S3，补全 x-amz-* 头。
+    // - Git 与普通文件下载（如 GitHub release 文件）使用 follow，由 Worker 自己跟随
+    //   github.com -> release-assets.githubusercontent.com 等跳转，让文件真正经由
+    //   Worker 回源，否则客户端会直接去访问被墙/缓慢的资产 CDN。
+    const redirectMode = isDockerRequest ? 'manual' : 'follow';
 
     let response = await fetch(targetUrl, {
       method: request.method,
